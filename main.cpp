@@ -4,7 +4,7 @@
 #include <chrono>
 #include "xxhash64.h"
 #include "String.h"
-#define CHECK
+// #define CHECK
 // #define OLD
 #define USE_BLOCK
 #ifdef OLD
@@ -137,6 +137,7 @@ int main() {
         }
     }
     printf("insert time: %lfms\n", duration_millsecond);
+    printf("collision num: %u\n", hashtable.next_num());
 
     
     duration_millsecond = 0;
@@ -156,6 +157,7 @@ int main() {
         duration_millsecond += std::chrono::duration<double, std::milli>(findtimeE - findtimeS).count();
     }
     printf("find time: %lfms\n", duration_millsecond);
+    printf("collision num: %u\n", hashtable.next_num());
 
     //printf("The current process consumes %lu KB memory\n",physical_memory_used_by_process());
 #endif

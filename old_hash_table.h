@@ -105,6 +105,7 @@ public:
         if (is_zero(place_value)) return {false, place_value};
         while (buf[place_value].first != key) {
             place_value = next(place_value);
+            ++collision_num;
             if (is_zero(place_value)) return {false, place_value};
         }
 
@@ -146,6 +147,7 @@ public:
         }
         return false;
     }
+    uint32_t next_num() const {return collision_num; }
     uint32_t hash(const key_t &key) const {
         return XXHash32::hash(key.data(), 64, 0);
     }
@@ -170,4 +172,5 @@ private:
     uint32_t degree;
     uint32_t m_size;
     Cell* buf;
+    uint32_t collision_num{0};
 };

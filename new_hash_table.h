@@ -72,6 +72,7 @@ public:
         m_size = 0;
         degree = size;
         buf = new Cell[buf_size()];
+
         first = new uint32_t[bucket_size()];
         next = new uint32_t[buf_size() + 1];
     }
@@ -142,6 +143,7 @@ public:
         auto bucket_value = hash_value & mask();
         auto place_value = first[bucket_value];
         while (place_value && buf[place_value - 1].first != key) {
+            ++collision_num;
             place_value = next[place_value];       
         }
         return place_value;
@@ -197,6 +199,7 @@ public:
             first[bucket_value] = i + 1;
         }
     }
+    uint32_t next_num() const { return collision_num; }
     uint32_t hash(const key_t &key) const {
         
         return XXHash32::hash(key.data(), 64, 0);
@@ -219,4 +222,5 @@ private:
     Cell* buf;
     uint32_t* first;
     uint32_t* next;
+    uint32_t collision_num{0};
 };
