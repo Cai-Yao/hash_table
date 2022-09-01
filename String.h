@@ -8,7 +8,7 @@ public:
 
     String() :data_(nullptr) {}
 
-    String(const char *d) : data_(d) {}
+    String(const char *d) : data_(d), size_(64){}
 
     const char *data() const { return data_; }
 
@@ -48,7 +48,7 @@ public:
 
 private:
     const char *data_;
-    const size_t size_ = 64;
+    size_t size_ = 64;
     // size_t size_;
 };
 
