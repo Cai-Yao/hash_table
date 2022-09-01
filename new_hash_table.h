@@ -1,10 +1,11 @@
 #pragma once 
 #include <algorithm>
 #include <cstddef>
-#include <stdint.h>
-#include <string>
+#include <cstdint>
+#include <cstring>
 #include <functional>
-#include <memory.h>
+#include <memory>
+#include <vector>
 #include "String.h"
 #include "xxhash32.h"
 
@@ -97,7 +98,6 @@ public:
             block->second.insert(std::move(value));
             return;
         }
-        auto it = &buf[m_size];
         new (&buf[m_size]) Cell(key, RowRefList(value.row_num, value.block_offset));
         ++m_size;
         auto hash_value = hash(key);
@@ -110,6 +110,33 @@ public:
             resize();
         }
     }
+
+    /// insert with block
+    void m_insert(key_t* keys, RowRef* values, unsigned int block_size) {
+        std::vector<uint32_t> index_list;
+        for (auto i = 0; i < block_size; ++i) {
+            auto place_value = find(keys[i]);
+            if (place_value) {
+                auto block = &buf[place_value - 1];
+                block->second.insert(std::move(values[i]));
+            } else {
+                index_list.emplace_back(i);
+            }
+        }
+        for (auto i : index_list) {
+            new (&buf[m_size]) Cell(keys[i], RowRefList(values[i].row_num, values[i].block_offset));
+            ++m_size;
+            if (is_full()) {
+                resize();
+                continue;
+            }
+            auto hash_value = hash(keys[i]);
+            auto bucket_value = hash_value & mask();
+
+            next[m_size] = first[bucket_value];
+            first[bucket_value] = m_size;
+        }
+    }
     uint32_t find(key_t key) {
         auto hash_value = hash(key);
         auto bucket_value = hash_value & mask();
@@ -118,6 +145,33 @@ public:
             place_value = next[place_value];       
         }
         return place_value;
+    }
+
+    /// find with block
+    uint32_t* m_find(key_t* keys, uint32_t block_size) {
+        auto* res = new uint32_t[block_size];
+        std::vector<std::tuple<uint32_t, uint32_t>> place_values;
+        std::vector<std::tuple<uint32_t, uint32_t>> place_values_new;
+        for (auto i = 0; i < block_size; i++) {
+            auto hash_value = hash(keys[i]);
+            auto bucket_value = hash_value & mask();
+            auto place_value = first[bucket_value];
+            place_values.emplace_back(i, place_value);
+        }
+        while (!place_values.empty()) {
+            place_values_new.clear();
+            for (auto it : place_values) {
+                auto place_value = std::get<1>(it);
+                auto index = std::get<0>(it);
+                if (place_value && buf[place_value - 1].first != keys[index]) {
+                    place_values_new.emplace_back(index, next[place_value]);
+                } else {
+                    res[index] = place_value;
+                }
+            }
+            swap(place_values, place_values_new);
+        }
+        return res;
     }
 
     RowRefList* get(uint32_t pos) {
@@ -129,7 +183,7 @@ public:
         auto temp_buf = new Cell[buf_size()];
         auto temp_first = new uint32_t[bucket_size()];
         auto temp_next = new uint32_t[buf_size() + 1];
-        memmove(temp_buf, buf, sizeof(Cell) * m_size);
+        std::memcpy(temp_buf, buf, sizeof(Cell) * m_size);
         delete buf;
         delete first;
         delete next;

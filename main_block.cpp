@@ -1,19 +1,16 @@
 
 #include <random>
 #include <unordered_map>
+#include <map>
+#include <vector>
 #include <chrono>
 #include "xxhash64.h"
 #include "String.h"
 #define CHECK
-// #define OLD
-#define USE_BLOCK
-#ifdef OLD
-#include "old_hash_table.h"
-#else
 #include "new_hash_table.h"
-#endif
 
 const size_t INSERT_NUM = 100000;
+const size_t TEST_NUM = 1000;
 const size_t FIND_NUM = 100000;
 const uint32_t BLOCK_NUM = 64;
 
@@ -25,7 +22,7 @@ struct Hash {
 };
 struct Equal {
     bool operator() (const String &a, const String &b) const {
-        return memcmp(a.data(), b.data(), 64) == 0;
+        return memcpy((void *)a.data(), (void *)b.data(), 64) == 0;
     }
 };
 std::unordered_map<String, std::vector<RowRef>, Hash, Equal> vis;
@@ -40,26 +37,6 @@ bool check(RowRefList* x, const std::vector<RowRef> & y) {
 
 std::vector<String> m_s;
 
-size_t physical_memory_used_by_process()
-{
-    FILE* file = fopen("/proc/self/status", "r");
-    int result = -1;
-    char line[128];
-    while (fgets(line, 128, file) != nullptr) {
-        if (strncmp(line, "VmRSS:", 6) == 0) {
-            int len = strlen(line);
-            const char* p = line;
-            for (; std::isdigit(*p) == false; ++p) {}
-            line[len - 3] = 0;
-            result = atoi(p);
-
-            break;
-        }
-    }
-    fclose(file);
-    return result;
-}
-
 int main() {
     /// init
     auto buildtimeS = std::chrono::steady_clock::now();
@@ -71,7 +48,8 @@ int main() {
     printf("build time: %lfms\n", duration_millsecond);
 
 #ifdef CHECK
-    for (int i = 0; i < 1000; i++) {
+    std::vector<std::pair<String, RowRef>> datas;
+    for (int i = 0; i < TEST_NUM; i++) {
         const auto p = new char[64];
         RowRef rf(rng() % INSERT_NUM, rng() % INSERT_NUM);
         for (auto j = 0; j < 64; j++) {
@@ -82,42 +60,51 @@ int main() {
         } else {
             vis[p] = {rf};
         }
+        datas.emplace_back(p, rf);
     }
     printf("info: init end\n");
-    for (auto it : vis) {
-        for (auto b : it.second) {
-            auto temp = b;
-            hashtable.insert(it.first, std::move(temp));
+
+    /// check insert with block
+    for (int i = 0; i < TEST_NUM; i++) {
+        if (i % BLOCK_NUM == 0) {
+            auto block_size = 0;
+            auto keys = new String[BLOCK_NUM];
+            auto values = new RowRef[BLOCK_NUM];
+            for (int j = i; j < TEST_NUM && j < i + BLOCK_NUM; j++) {
+                ++block_size;
+                keys[j - i] = datas[j].first;
+                values[j - i] = datas[j].second;
+            }
+            hashtable.m_insert(keys, values, block_size);
+            i += BLOCK_NUM;
         }
     }
 
-#ifdef OLD
-    for (auto it : vis) {
-        printf("info: find size %u\n", it.second.size());
-        auto place_value = hashtable.find(it.first);
-        if (place_value != -1) {
-            if (!check(hashtable.get(place_value), it.second)) {
-                printf("error: find RowRef no right!!!!!!!!\n");
+    /// check find with block
+    for (int i = 0; i < TEST_NUM; i++) {
+        if (i % BLOCK_NUM == 0) {
+            auto block_size = 0;
+            auto keys = new String[BLOCK_NUM];
+            for (int j = i; j < TEST_NUM && j < i + BLOCK_NUM; j++) {
+                ++block_size;
+                keys[j - i] = datas[j].first;
             }
-        }
-        else {
-            printf("error: no find that must exist!!!!!!!!\n");
+            auto res = hashtable.m_find(keys, block_size);
+            for (auto j = 0; j < block_size; j++) {
+                if (res[j] == 0) {
+                    printf("error: no find that must exist!!!!!!!!\n");
+                    exit(0);
+                } else {
+                    if (!check(hashtable.get(res[j] - 1), vis[keys[j]])) {
+                        printf("error: find RowRef no right!!!!!!!!\n");
+                        exit(0);
+                    }
+                }
+            }
+            i += BLOCK_NUM;
         }
     }
-#else
-    for (auto it : vis) {
-        printf("info: find size %u\n", it.second.size());
-        auto place_value = hashtable.find(it.first);
-        if (place_value) {
-            if (!check(hashtable.get(place_value - 1), it.second)) {
-                printf("error: find RowRef no right!!!!!!!!\n");
-            }
-        }
-        else {
-            printf("error: no find that must exist!!!!!!!!\n");
-        }
-    }
-#endif
+
 #else
     auto inserttimeS = std::chrono::steady_clock::now();
     duration_millsecond = 0;
